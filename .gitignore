@@ -1,0 +1,15 @@
+# User-specific config (contains paths, credentials)
+.env
+
+# Sensitive files (passwords, personal mappings)
+passwords.txt
+series_map.json
+
+# Python
+__pycache__/
+
+# Claude Code
+.claude/
+
+# unrar binary (not redistributable)
+unrar
