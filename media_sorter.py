@@ -40,6 +40,7 @@ SERIES_NAME_PATTERN = re.compile(r"^(.*?)[.\s_-]+[Ss]\d{2}[Ee]\d{2}")
 
 _processing_lock = threading.Lock()
 _reprocess_flag = threading.Event()
+_last_successful_password: str | None = None
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -206,12 +207,19 @@ def _find_password(archive: Path) -> str | None:
 
 def extract_archive(archive: Path, dest: Path, cached_password: str | None = None) -> tuple[bool, str | None]:
     """Extract archive. Returns (success, password_used)."""
+    global _last_successful_password
     try:
-        # Try cached password first
-        if cached_password is not None:
-            success, output = _run_extract(archive, dest, cached_password or None)
+        # Try previously successful passwords before doing a full password scan.
+        tried_passwords: set[str | None] = set()
+        candidate_passwords = [cached_password, _last_successful_password]
+        for candidate in candidate_passwords:
+            if candidate in tried_passwords or candidate is None:
+                continue
+            tried_passwords.add(candidate)
+            success, output = _run_extract(archive, dest, candidate or None)
             if success:
-                return True, cached_password
+                _last_successful_password = candidate
+                return True, candidate
 
         # Full password search
         password = _find_password(archive)
@@ -222,6 +230,7 @@ def extract_archive(archive: Path, dest: Path, cached_password: str | None = Non
         pw = password if password else None
         success, output = _run_extract(archive, dest, pw)
         if success:
+            _last_successful_password = password
             return True, password
 
         log.error("Extraction failed for %s: %s", archive, output[-300:])
