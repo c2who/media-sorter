@@ -65,6 +65,16 @@ def load_passwords() -> list[str]:
     return []
 
 
+def format_bytes(num_bytes: int) -> str:
+    size = float(num_bytes)
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{num_bytes} B"
+
+
 def is_download_complete(folder: Path, skip_age_check: bool = False) -> bool:
     now = time.time()
     for entry in folder.rglob("*"):
@@ -201,7 +211,6 @@ def extract_archive(archive: Path, dest: Path, cached_password: str | None = Non
         if cached_password is not None:
             success, output = _run_extract(archive, dest, cached_password or None)
             if success:
-                log.info("Extraction complete: %s", archive.name)
                 return True, cached_password
 
         # Full password search
@@ -213,7 +222,6 @@ def extract_archive(archive: Path, dest: Path, cached_password: str | None = Non
         pw = password if password else None
         success, output = _run_extract(archive, dest, pw)
         if success:
-            log.info("Extraction complete: %s", archive.name)
             return True, password
 
         log.error("Extraction failed for %s: %s", archive, output[-300:])
@@ -290,10 +298,21 @@ def process_folder(folder: Path, series_map: dict[str, str]) -> bool:
     extracted_archives = []
     for archive in archives:
         log.info("Extracting: %s -> %s", archive.name, extract_dir)
+        archive_size = sum(part.stat().st_size for part in archive_cleanup_targets(archive))
+        started_at = time.perf_counter()
         success, password = extract_archive(archive, extract_dir, cached_password)
+        duration = time.perf_counter() - started_at
         if success:
             cached_password = password
             extracted_archives.append(archive)
+            throughput = archive_size / duration if duration > 0 else 0
+            log.info(
+                "Extraction complete: %s (archive size: %s, duration: %.1fs, throughput: %s/s)",
+                archive.name,
+                format_bytes(archive_size),
+                duration,
+                format_bytes(int(throughput)),
+            )
         else:
             log.error("Failed to extract %s, skipping", archive.name)
             had_errors = True
