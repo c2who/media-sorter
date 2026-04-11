@@ -97,6 +97,33 @@ def find_archives(folder: Path) -> list[Path]:
     return archives
 
 
+def archive_cleanup_targets(archive: Path) -> list[Path]:
+    """Return the archive files that can be deleted after successful extraction."""
+    if archive.suffix.lower() != ".rar":
+        return [archive]
+
+    match = re.match(r"^(?P<base>.+)\.part\d+\.rar$", archive.name, re.IGNORECASE)
+    if not match:
+        return [archive]
+
+    pattern = f"{match.group('base')}.part*.rar"
+    return sorted(p for p in archive.parent.glob(pattern) if p.is_file())
+
+
+def cleanup_extracted_archives(archives: list[Path]):
+    """Delete only archive files that were successfully extracted."""
+    cleanup_targets: set[Path] = set()
+    for archive in archives:
+        cleanup_targets.update(archive_cleanup_targets(archive))
+
+    for target in sorted(cleanup_targets):
+        try:
+            target.unlink()
+            log.info("Removed extracted archive: %s", target.name)
+        except FileNotFoundError:
+            continue
+
+
 def _test_password(archive: Path, password: str | None = None) -> tuple[bool, str]:
     """Test if a password works without extracting (fast)."""
     ext = archive.suffix.lower()
@@ -260,11 +287,13 @@ def process_folder(folder: Path, series_map: dict[str, str]) -> bool:
     # Extract all archives, caching password from first success
     cached_password = None
     had_errors = False
+    extracted_archives = []
     for archive in archives:
         log.info("Extracting: %s -> %s", archive.name, extract_dir)
         success, password = extract_archive(archive, extract_dir, cached_password)
         if success:
             cached_password = password
+            extracted_archives.append(archive)
         else:
             log.error("Failed to extract %s, skipping", archive.name)
             had_errors = True
@@ -300,9 +329,23 @@ def process_folder(folder: Path, series_map: dict[str, str]) -> bool:
         log.warning("Some extractions failed, keeping source folder: %s", folder.name)
         return False
 
-    # Clean up source download folder only when everything succeeded
-    shutil.rmtree(folder)
-    log.info("Cleaned up: %s", folder.name)
+    cleanup_extracted_archives(extracted_archives)
+
+    if extract_dir.exists():
+        shutil.rmtree(extract_dir)
+
+    remaining_archives = find_archives(folder)
+    remaining_files = [entry for entry in folder.iterdir()]
+
+    if remaining_archives:
+        log.info("Keeping folder with remaining archives: %s", folder.name)
+        return True
+
+    if not remaining_files:
+        folder.rmdir()
+        log.info("Cleaned up empty folder: %s", folder.name)
+    else:
+        log.info("Keeping folder with remaining files: %s", folder.name)
     return True
 
 

@@ -23,7 +23,7 @@ Automatically extracts and organizes downloaded media files into a folder struct
    - Exact match in `series_map.json`
    - Fuzzy match against existing folders
    - Auto-creates a new folder if no match found
-6. Cleans up the source download folder after successful processing
+6. Removes only successfully extracted archives, and deletes the source folder only if it is empty afterward
 
 ## Quick Start
 
